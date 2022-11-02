@@ -28,15 +28,17 @@ def debug(*args) -> None:
 
 MAX_CHUNK_SIZE = 6
 
+
 class PermutationGenerator:
     # From https://codegolf.stackexchange.com/questions/114883/i-give-you-nth-permutation-you-give-me-n
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.alphabet = '0123456789abcdefghijklmnopqrstuvwxyz'
         self.fact = [0] * 34
         self.fact[0] = 1
         for i in range(1, 32):
             self.fact[i] = (self.fact[i - 1] * i)
+
     def encode(self, cards, rank):
         ''' Encode the given cards into a permutation of the given rank '''
         base = self.alphabet[:len(cards)]
@@ -85,8 +87,9 @@ class PermutationGenerator:
             elif i and c == base[i-1]:
                 continue
             total += self.perm_count(newbase)
+
     def _perm_unrank(self, rank, base, head=''):
-        ''' Determine the permutation with given rank of the 
+        ''' Determine the permutation with given rank of the
             rank zero permutation string `base`.
         '''
         if len(base) < 2:
@@ -104,6 +107,7 @@ class PermutationGenerator:
 # -----------------------------------------------------------------------------
 #   Codec
 # -----------------------------------------------------------------------------
+
 
 class Huffman:
 
@@ -124,9 +128,9 @@ class Huffman:
         padded_msg = Bits(bin=padded_msg_bin)
 
         debug('[ Huffman._add_padding ]',
-                f'len(msg): {len(msg)}, msg: {msg.bin}',
-                f'padding size: {padding_len}',
-                f'padded msg: {padded_msg.bin}')
+              f'len(msg): {len(msg)}, msg: {msg.bin}',
+              f'padding size: {padding_len}',
+              f'padded msg: {padded_msg.bin}')
 
         return padded_msg
 
@@ -134,7 +138,7 @@ class Huffman:
         original_encoding = Bits(bin=f'0b{msg.bin[padding_len:]}')
 
         debug('[ Huffman._remove_padding ]',
-                f'original encoding: {original_encoding.bin}')
+              f'original encoding: {original_encoding.bin}')
 
         return original_encoding
 
@@ -174,7 +178,6 @@ class Agent:
         self.permuter = PermutationGenerator()
         self.max_chunk_size = 6
 
-
         # if can use precomp, comment this out
         r = requests.get('https://raw.githubusercontent.com/mwcheng21/minified-text/main/minified.txt')
         minified_text = r.text
@@ -197,13 +200,14 @@ class Agent:
     def encode(
             self,
             msg: str
-        ) -> List[int]:
+    ) -> List[int]:
 
-        msg = ' '.join([self.word2abrev[word] if word in self.word2abrev else word for word in msg.split(" ")])
+        msg = ' '.join([self.word2abrev[word] if word in self.word2abrev
+                        else word for word in msg.split(" ")])
         bit_str = self.huff.encode(msg, padding_len=0).bin
 
         step_size, parts, start_padding, end_padding = self.get_parts(bit_str)
-        
+
         if step_size == -1:
             # raise Exception("Could not encode message")
             return list(reversed(range(52)))
@@ -218,11 +222,12 @@ class Agent:
 
         encode_msg.extend(cards)
 
-        #TODO: encode 2 bits for step size
+        # TODO: encode 2 bits for step size
         # 3 bits for start padding
         # 3 bits for end padding
         # n bits for each chunk size
-        lengths = ''.join(["0" if size == self.max_chunk_size else "1" for size in chunk_size])
+        lengths = ''.join(["0" if size == self.max_chunk_size
+                           else "1" for size in chunk_size])
         end_padding = '{0:b}'.format(end_padding).zfill(3)
         start_padding = '{0:b}'.format(start_padding).zfill(3)
         step_size = '{0:b}'.format(step_size).zfill(2)
@@ -234,8 +239,11 @@ class Agent:
         metadata_cards = self.encode_metadata(step_size, start_padding, end_padding, lengths, useless_cards)
 
         useless_cards = [card for card in useless_cards
-                    if card not in metadata_cards]
+                         if card not in metadata_cards]
 
+        # trash_cards useless_cards metadata_cards  self.stop_card  encode_msg
+        encode_msg.reverse()
+        # metadata_cards.reverse()
         deck = self.trash_cards + useless_cards + metadata_cards + [self.stop_card] + encode_msg
 
         return deck if valid_deck(deck) else list(range(52))
@@ -249,6 +257,7 @@ class Agent:
 
         deck = self.remove_trash_cards(deck)
         encoded_message = self.get_encoded_message(deck)
+        encoded_message.reverse()
         useless_cards = self.get_useless_cards(deck)
 
         if len(encoded_message) == 0:
@@ -257,6 +266,7 @@ class Agent:
         messageLength = len(encoded_message)
 
         # decode metadata
+        # print(self.decode_metadata(useless_cards, messageLength))
         step_size, start_padding, end_padding, lengths = self.decode_metadata(useless_cards, messageLength)
 
         if step_size == 0:
@@ -267,8 +277,11 @@ class Agent:
             cards = self.un_hash_msg(encoded_message, step_size)
 
         # decode message
-        chunk_sizes = [self.max_chunk_size if length == '0' else self.max_chunk_size-1 for length in lengths]
-        bit_str = ''.join(['{0:b}'.format(card).zfill(chunk_sizes[i]) for i, card in enumerate(cards)])
+        chunk_sizes = [self.max_chunk_size if length == '0'
+                       else self.max_chunk_size-1 for length in lengths]
+
+        bit_str = ''.join(['{0:b}'.format(card).zfill(chunk_sizes[i])
+                           for i, card in enumerate(cards)])
 
         bit_str = bit_str[start_padding:-end_padding] if end_padding > 0 else bit_str[start_padding:]
 
@@ -290,21 +303,21 @@ class Agent:
             self,
             deck
     ) -> List[int]:
-        return deck[deck.index(self.stop_card)+1:]
+        return deck[deck.index(self.stop_card) + 1:]
 
     def get_useless_cards(self, deck):
         return deck[:deck.index(self.stop_card)]
 
     def get_parts(self, bit_str):
         '''
-        Takes in a bit string 
+        Takes in a bit string
 
         Returns a tuple of is_able_to_encode, parts, start_padding, end_padding, contains_no_duplicates
         '''
         chunk_size = self.max_chunk_size
         padding = max(chunk_size, ((chunk_size - len(bit_str) % chunk_size) % chunk_size))
         last_card_padding = 0
-    
+
         for i in range(padding):
             start_padding = i
 
@@ -337,7 +350,7 @@ class Agent:
                 break
         else:
             return -1, None, None, None
-        
+
         return step_size, parts, start_padding, last_card_padding
 
     def un_hash_msg(self, encoded_msg, step_size):
@@ -356,7 +369,7 @@ class Agent:
         return message
 
     def hash_msg_with_linear_probe(self, chunks, step_size):
-        #attempt a linear probe at the given step size
+        # attempt a linear probe at the given step size
         hash_table = {}
         step_size = step_size if step_size != 3 else 5
 
@@ -380,8 +393,8 @@ class Agent:
                 return True and max(encoded_msg) < 32, i
         return False, None
 
-    def encode_metadata(self, step_size : str, start_padding : str, end_padding : str, lengths : str, cards: List[int]):
-        ''' 
+    def encode_metadata(self, step_size: str, start_padding: str, end_padding: str, lengths: str, cards: List[int]):
+        '''
         Encode the metadata into the deck
 
         Returns a list of cards
@@ -389,16 +402,16 @@ class Agent:
         cards = [str(card) for card in cards]
 
         metadata = step_size + start_padding + end_padding + lengths
-        
+
         last_n_cards = cards[-self.n_needed_metadata(2**len(metadata)):]
         permutation = self.permuter.encode(last_n_cards, int(metadata, 2))
 
         return [int(card) for card in permutation]
-        
-    def decode_metadata(self, uselessCards : List[int], messageLength : int):
+
+    def decode_metadata(self, uselessCards: List[int], messageLength: int):
         '''
         Decode the metadata from the deck
-        
+
         Returns a tuple of step_size, start_padding, end_padding, lengths
         '''
         cards = [str(card) for card in uselessCards]
@@ -413,7 +426,7 @@ class Agent:
 
         return step_size, start_padding, end_padding, lengths
 
-    def n_needed_metadata(self, messageLength : int):
+    def n_needed_metadata(self, messageLength: int):
         '''
         Returns the number of cards needed to encode the metadata
         '''
@@ -423,7 +436,8 @@ class Agent:
 #   Unit Tests
 # -----------------------------------------------------------------------------
 
-def test_huffman_codec():
+
+def test_huffman_codec() -> None:
     # Note: shakespeare codec doesn't seem to be able to handle punctuations
     cases = ['group 3', 'magic code']
 
