@@ -241,9 +241,10 @@ class Agent:
         useless_cards = [card for card in useless_cards
                          if card not in metadata_cards]
 
-        # trash_cards useless_cards metadata_cards  self.stop_card  encode_msg
         encode_msg.reverse()
-        # metadata_cards.reverse()
+        metadata_cards.reverse()
+
+        # trash_cards useless_cards metadata_cards  self.stop_card  encode_msg
         deck = self.trash_cards + useless_cards + metadata_cards + [self.stop_card] + encode_msg
 
         return deck if valid_deck(deck) else list(range(52))
@@ -416,6 +417,9 @@ class Agent:
         '''
         cards = [str(card) for card in uselessCards]
         last_n_cards = cards[-self.n_needed_metadata(2**(messageLength+3+3+2)):]
+
+        # This is where reversing metadata occurs
+        last_n_cards.reverse()
 
         metadata = self.permuter.decode(last_n_cards)
         metadata = '{0:b}'.format(metadata).zfill(2 + 3 + 3 + messageLength)
