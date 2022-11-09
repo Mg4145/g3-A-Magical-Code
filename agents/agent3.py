@@ -55,6 +55,29 @@ def agent_assert(condition: bool, action: Exception):
 
 
 # -----------------------------------------------------------------------------
+#   Checksum
+# -----------------------------------------------------------------------------
+
+pearson_table = list(range(0, 256))
+
+def pearson_checksum(bits: Bits, table=pearson_table) -> Bits:
+    """Pearson hashing."""
+    # NOTE:
+    # since bit pattern might not necessarily be a multiple of 8
+    # currently, the checksum for 0 or 00, or 0000 are the same.
+
+    bit_str = bits.bin
+    message = [bit_str[i*8:(i+1)*8] for i in range(len(bit_str)//8)]
+    if len(bit_str) % 8 > 0:
+        message.append(bit_str[-(len(bit_str) % 8):])
+
+    hash = len(message) % 256
+    for byte in message:
+        hash = table[hash ^ int(byte, 2)]
+
+    return hash
+
+# -----------------------------------------------------------------------------
 #   Agent Parameters
 # -----------------------------------------------------------------------------
 
