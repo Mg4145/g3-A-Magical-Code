@@ -151,7 +151,6 @@ class PermutationGenerator:
             # encoding the rank using permutation won't work
             return sys.maxsize
 
-
 # -----------------------------------------------------------------------------
 #   String -> Domain Detector
 # -----------------------------------------------------------------------------
@@ -230,19 +229,6 @@ class Domain(Enum):
     PLACES_AND_NAMES = PlaceNameRule
     WAR_WORDS = WarWordsRule
 
-class DomainDetector:
-    def __init__(self, domains: list[Domain], default_domain=Domain.GENERIC):
-        self.domains = domains
-        self.default_domain = default_domain
-
-    def detect(self, msg: str) -> Domain:
-        for domain in self.domains:
-            rule = domain.value()
-            if rule.verdict(msg):
-                return domain
-        return Domain.GENERIC
-
-
 # -----------------------------------------------------------------------------
 #   String <-> String Message TransFormer (Compression, DeCompression)
 # -----------------------------------------------------------------------------
@@ -282,7 +268,6 @@ class DictIdxTransformer(MessageTransformer):
         self.delimiter = delimiter
         with open(wordlist_path) as f:
             self.wordlist = [word.strip() for word in f.read().splitlines()]
-        self.wordlist.append("*")
         self.word2idx = {word: idx for idx, word in enumerate(self.wordlist)}
         self.idx2word = {idx: word for idx, word in enumerate(self.wordlist)}
         self.word_bit_size = int(math.ceil(math.log2(len(self.wordlist))))
@@ -292,7 +277,7 @@ class DictIdxTransformer(MessageTransformer):
         encoded = []
         for word in words:
             if word not in self.word2idx:
-                word = "*"
+                return None
             idx = self.word2idx[word]
             encoded.append("{0:b}".format(idx).zfill(self.word_bit_size))
         bits = Bits(bin="".join(encoded))
@@ -380,6 +365,8 @@ class PasswordsTransformer(MessageTransformer):
                 self.word2abrev[full] = shortened
 
     def compress(self, msg: str) -> tuple[str, Bits]:
+        if msg[0] != "@":
+            return None
         msg = msg.replace("@", "")
         splitMsg = self._get_all_words(msg, self.word2abrev.keys())
 
@@ -618,6 +605,33 @@ class AlphaNumericTransformer(MessageTransformer):
     def __str__(cls) -> str:
         return "AlphaNumericTransformer"
        
+# -----------------------------------------------------------------------------
+#    String -> Domain Detector
+# -----------------------------------------------------------------------------
+
+class DomainDetector:
+    def __init__(self, default_domain=Domain.GENERIC):
+        self.transformers_domain = [(WordTransformer(), Domain.GENERIC), (PasswordsTransformer(), Domain.PASSWORD), (CoordsTransformer(), Domain.COORDS), (AddressTransformer(), Domain.ADDRESS), (FlightsTransformer(), Domain.FLIGHTS), (WarWordsTransformer(), Domain.WAR_WORDS), (PlacesAndNamesTransformer(), Domain.PLACES_AND_NAMES), (SixWordsTransformer(), Domain.SIX_WORDS), (AlphaNumericTransformer(), Domain.ALPHA_NUMERIC)]
+
+        self.default_domain = default_domain
+
+    def detect(self, msg: str) -> Domain:
+        domain_bits = []
+        for transformer, domain in self.transformers_domain:
+            try:
+                rule = domain.value()
+                if rule.verdict(msg):
+                    response = transformer.compress(msg)
+                    domain_bits.append(None if response is None else response[1].bin)
+
+                else:
+                    domain_bits.append(None)
+            except Exception as e:
+                print(e) #TODO:
+                domain_bits.append(None)
+        bitLens = [len(bits) if bits is not None else sys.maxsize for bits in domain_bits]
+
+        return self.transformers_domain[bitLens.index(min(bitLens))][1]
 
 # -----------------------------------------------------------------------------
 #   Bits <-> Deck Converter (BDC)
@@ -1140,16 +1154,7 @@ class Agent:
         self.free_cards = list(range(0, 32))
         self.trash_cards = list(range(32, 51))
 
-        # IMPORTANT: ordering here matters since we check them linearlly
-        # a subset of a less efficient one should be found sooner (ie alpha numeric last since WAR_WORDS is a more efficient subset)
-        self.domain_detector = DomainDetector(
-            [
-                Domain.PASSWORD, Domain.COORDS, # format specific
-                Domain.ADDRESS, Domain.FLIGHTS, # format specific with dictionary
-                Domain.SIX_WORDS, Domain.WAR_WORDS, Domain.PLACES_AND_NAMES, # dictionary domains
-                Domain.ALPHA_NUMERIC # format generic
-            ]
-        )
+        self.domain_detector = DomainDetector()
 
         self.domain2transformer = {
             Domain.GENERIC: WordTransformer(),
