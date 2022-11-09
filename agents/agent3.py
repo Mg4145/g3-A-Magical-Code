@@ -366,6 +366,7 @@ class PasswordsTransformer(MessageTransformer):
         ])
         #TODO: join on space or not?
         bits = self.huffman.encode(combinedMsg, padding_len=0)
+
         return combinedMsg, bits
 
     def uncompress(self, bits: Bits) -> str:
@@ -974,8 +975,9 @@ class Huffman:
             self.codec = HuffmanCodec.from_frequencies(dictionary)
         else:
             self.codec = load_shakespeare()
-        self.modified_codec = {symbol: bin(val)[2:].rjust(bits, '0') for symbol, (bits, val) in self.codec.get_code_table().items()}
-
+        toTruncate = all([bin(val)[2:].rjust(bits, '0')[0]=="0" for symbol, (bits, val) in self.codec.get_code_table().items() if val !=  1])
+        self.modified_codec = {symbol: (bin(val)[2:].rjust(bits-1, '0') if toTruncate else bin(val)[2:].rjust(bits, '0')) for symbol, (bits, val) in self.codec.get_code_table().items()}
+ 
     def _add_padding(self, msg: Bits, padding_len: int) -> Bits:
 
         padding_bits = '{0:b}'.format(0).zfill(
@@ -1007,7 +1009,7 @@ class Huffman:
         bits = Bits(bin=''.join(encoded_message))
 
         # What we use to encode to
-        old_bits = Bits(bytes=self.codec.encode(msg))
+        # old_bits = Bits(bytes=self.codec.encode(msg))
         # debug(f'old_bits: {len(old_bits.bin)}, new_bits: {len(bits.bin)}')
         debug('[ Huffman.encode ]', f'msg: {msg} -> bits: {bits.bin}')
 
@@ -1028,7 +1030,7 @@ class Huffman:
             else:
                 raise ValueError()
         # What we used to decode to (doesn't work bc new encoding)
-        old_decoded = self.codec.decode(bits.tobytes())
+        # old_decoded = self.codec.decode(bits.tobytes())
 
         debug('[ Huffman.decode ]', f'bits: {bits.bin} -> msg: {decoded_message}')
 
@@ -1114,7 +1116,6 @@ class Agent:
         # 4. tangles the decks, trash cards, unused cards, stop cards into a
         #    final deck returned to the simulator
         info(f"\n[ {msg} ] encode")
-
         domain = self.domain_detector.detect(msg)
         info(f"[ {msg} ]", f"domain: {domain.name}")
 
