@@ -167,30 +167,27 @@ class GenericRule:
 
 class PasswordRule:
     def verdict(self, msg: str) -> bool:
-        pattern = re.compile("^@[a-z0-9,.]+$") #TODO: can't handle capitals
+        pattern = re.compile("^@[a-z0-9,.]+$")
         return pattern.match(msg)
 
-class RandomAlphaNumericRule: #not tested
+class RandomAlphaNumericRule:
     def verdict(self, msg: str) -> bool:
-        pattern = re.compile("^[a-z0-9,.]+$")
+        pattern = re.compile("^[a-z0-9 .]+$")
         return pattern.match(msg)
 
 class CoordinatesRule:
     def verdict(self, msg: str) -> bool:
-        pattern = re.compile("^[0-9]{1,}.[0-9]{4} [NESW], [0-9]{1,}.[0-9]{4} [NESW]$") #TODO: assumes sigfigs of 4
+        pattern = re.compile("^[0-9]{1,}.[0-9]{4} [NESW], [0-9]{1,}.[0-9]{4} [NESW]$")
         return pattern.match(msg)
 
+with open("messages/agent5/street_suffix.txt") as f:
+    ADDRESS_SUFFIXES  = set([word.strip() for word in f.read().splitlines()])
 class AddressRule:
     def verdict(self, msg: str) -> bool:
-        road_words = ["Street", "Road", "Avenue", "Boulevard", "Drive", "Court", "Place", "Square", "Lane", "Roadway", "Trail", "Parkway", "Commons", "Av", "Av.", "Ave", "St.", "St", "Rd", "Rd.", "Mall", "Plaza", "Route", "Highway", "Pike", "Pkwy", "Blvd", "Blvd.", "Turnpike", "Expy", "Ct", "Ct.", "Freeway"] #TODO: are there more?
-        for word in road_words:
-            if word in msg:
-                return True
-        return False
+        return len(set(msg.split(' ')).intersection(ADDRESS_SUFFIXES)) > 0
 
 class SixWordRule: #not tested much
     def verdict(self, msg: str) -> bool:
-        # pattern = re.compile("^([a-z]+ ){5}([a-z]+)$") # Changed to accept any num words that are in it 
         pattern = re.compile("^([a-z]+ )*([a-z]+)$")
         with open("./messages/agent7/30k.txt") as f:
             all_words = [word.strip() for word in f.read().splitlines()]
@@ -198,20 +195,20 @@ class SixWordRule: #not tested much
 
 class AirplaneFlightRule:
     def verdict(self, msg: str) -> bool:
-        striped_msg = ' '.join([word.strip() for word in msg.split()])
-        pattern = re.compile("^([A-Z0-9]{3} )([A-Z.'-]* )+([0-9]+)$")#TODO: can't handle lowercase or numbers in middle
-        return pattern.match(striped_msg)
+        # idx, store normal, 4bits, 5bits, 2bits
+        pattern = re.compile("^([A-Z]{3} )([A-Z0-9]{4} )([0][0-9]|10|11|12)([0-3][0-9])(202[3-5])$")
+        return pattern.match(msg)
 
 class PlaceNameRule: #not tested much
     def verdict(self, msg: str) -> bool:
-        pattern = re.compile("^([A-Z][a-z]+) ([A-Z][a-z]+)$")
-        with open("./messages/agent8/names.txt") as f: #TODO: find giant list of names and places
+        pattern = re.compile("^([A-Z][a-z]+ )*([A-Z][a-z]+)+$")
+        with open("./messages/agent8/names.txt") as f:
             all_words = [word.strip() for word in f.read().splitlines()]
         with open("./messages/agent8/places.txt") as f:
             all_words += [word.strip() for word in f.read().splitlines()]
         return pattern.match(msg) and all([word in all_words for word in msg.split(" ")])
 
-class WarWordsRule:
+class WarWordsRule: #TODO: not sure format
     def verdict(self, msg: str) -> bool:
         pattern = re.compile("^([a-z]+ )*([a-z]+)$") #TODO: can't handle numbers
         with open("./messages/agent6/corpus-ngram-1.txt") as f: #TODO not sure the actual format
@@ -282,9 +279,17 @@ class DictIdxTransformer(MessageTransformer):
         self.delimiter = delimiter
         with open(wordlist_path) as f:
             self.wordlist = [word.strip() for word in f.read().splitlines()]
-        self.wordlist.append("*")
+
         self.word2idx = {word: idx for idx, word in enumerate(self.wordlist)}
         self.idx2word = {idx: word for idx, word in enumerate(self.wordlist)}
+        self.word_bit_size = int(math.ceil(math.log2(len(self.wordlist))))
+
+    def add_words(self, words: list[str]):
+        for word in words:
+            if word not in self.word2idx:
+                self.word2idx[word] = len(self.wordlist)
+                self.idx2word[len(self.wordlist)] = word
+                self.wordlist.append(word)
         self.word_bit_size = int(math.ceil(math.log2(len(self.wordlist))))
 
     def compress(self, msg: str) -> tuple[str, Bits]:
@@ -292,7 +297,7 @@ class DictIdxTransformer(MessageTransformer):
         encoded = []
         for word in words:
             if word not in self.word2idx:
-                word = "*"
+                return None
             idx = self.word2idx[word]
             encoded.append("{0:b}".format(idx).zfill(self.word_bit_size))
         bits = Bits(bin="".join(encoded))
@@ -465,37 +470,64 @@ class CoordsTransformer(MessageTransformer):
         for i in range(2, 9):
             try:
                 bits = self._intstr_to_bitstr(lat, i) + self._intstr_to_bitstr(latMin, i+6)
+                bits += ("0" if latDir == "N" else "1")
                 bits += self._intstr_to_bitstr(long, i) + self._intstr_to_bitstr(longMin, i+6)
-                bits += ("0" if latDir == "N" else "1") + ("0" if longDir == "E" else "1")
+                bits += ("0" if longDir == "E" else "1")
                 break
             except ValueError:
                 pass
 
-        #TODO: can I decrease the n bits for each number even more?
-        return msg, Bits(bin=bits)
+        bits = Bits(bin=bits)
+        debug(f'CoordsTransformer: "{msg}" -> {bits.bin}')
+
+        return msg, bits
 
     def uncompress(self, bits: Bits) -> str:
         bitstr = bits.bin
-        if len(bitstr) - 14 < 8 or (len(bitstr) -14) % 4 != 0:
-            raise NullDeckException("NULL(Weird, look into, happens 4 times)")
+        # if len(bitstr) - 14 < 8 or (len(bitstr) -14) % 4 != 0:
+            # raise NullDeckException("NULL(Weird, look into, happens 4 times)")
 
-        i = int((len(bitstr) - 14) / 4)
+        i = int(math.ceil((len(bitstr) - 14) / 4))
+        lat = ""
+        latMin = ""
+        latDir = ""
+        long = ""
+        longMin = ""
+        longDir = ""
 
         lat = self._bitstr_to_intstr(bitstr[:i])
-        latMin = self._bitstr_to_intstr(bitstr[i:i+i+6], padding=4)
-        long = self._bitstr_to_intstr(bitstr[i+i+6:i+i+6+i])
-        longMin = self._bitstr_to_intstr(bitstr[i+i+6+i:i+i+6+i+i+6], padding=4)
-        latDir = "N" if bitstr[i+i+6+i+i+6] == "0" else "S"
-        longDir = "E" if bitstr[i+i+6+i+i+6+1] == "0" else "W"
+        if len(bitstr) >= i + i + 6:
+            latMin = self._bitstr_to_intstr(bitstr[i:i+i+6], padding=4)
+        if len(bitstr) >= i+i+6:
+            latDir = "N" if bitstr[i+i+6] == "0" else "S"
+        if len(bitstr) >= i+i+7+i:
+            long = self._bitstr_to_intstr(bitstr[i+i+7:i+i+7+i])
+        if len(bitstr) >= i+i+7+i+i+6:
+            longMin = self._bitstr_to_intstr(bitstr[i+i+7+i:i+i+7+i+i+6], padding=4)
+        if len(bitstr) >= i+i+7+i+i+6:
+            longDir = "E" if bitstr[i+i+7+i+i+6] == "0" else "W"
+        if longDir == "":
+            msg = "PARTIAL: "
+        else:
+            msg = ""
 
-        formatedOutput = f"{lat}.{latMin} {latDir}, {long}.{longMin} {longDir}"
+        msg += f"{lat}"
+        msg += f".{latMin}" if latMin != "" else ""
+        msg += f" {latDir}" if latDir != "" else ""
+        msg += f", {long}" if long != "" else ""
+        msg += f".{longMin}" if longMin != "" else ""
+        msg += f" {longDir}" if longDir != "" else ""
 
-        return formatedOutput
+        debug(f'CoordsTransformer: "{bits.bin}" -> {msg}')
+
+        return msg
 
     def _intstr_to_bitstr(self, num: str, num_bits: int) -> Bits:
         return Bits(uint=int(num), length=num_bits).bin
   
     def _bitstr_to_intstr(self, bits: str, padding=0) -> str:
+        if bits == "":
+            return ""
         num = str(int(bits, 2))
         if padding:
             return "0"*(4 - len(num)) + num
@@ -511,13 +543,13 @@ class AddressTransformer(MessageTransformer): #TODO: later bc format not finaliz
 
     def compress(self, msg: str) -> tuple[str, Bits]:
         bits = self.huffman.encode(msg, padding_len=0)
-        debug(f'GenericTransformer: "{msg}" -> {bits.bin}')
+        debug(f'AddressTransformer: "{msg}" -> {bits.bin}')
 
         return msg, bits
 
     def uncompress(self, bits: Bits) -> str:
         msg = self.huffman.decode(bits, padding_len=0)
-        debug(f'GenericTransformer: "{bits.bin}" -> {msg}')
+        debug(f'AddressTransformer: "{bits.bin}" -> {msg}')
 
         return msg
 
@@ -525,19 +557,65 @@ class AddressTransformer(MessageTransformer): #TODO: later bc format not finaliz
     def __str__(cls) -> str:
         return "AddressTransformer"
        
-class FlightsTransformer(MessageTransformer): #TODO: later bc format not finalized
+class FlightsTransformer(MessageTransformer):
     def __init__(self):
-        self.huffman = Huffman()
+        self.freq = {"A": 1, "B": 1, "C": 1, "D": 1, "E": 1, "F": 1, "G": 1, "H": 1, "I": 1, "J": 1, "K": 1, "L": 1, "M": 1, "N": 1, "O": 1, "P": 1, "Q": 1, "R": 1, "S": 1, "T": 1, "U": 1, "V": 1, "W": 1, "X": 1, "Y": 1, "Z": 1, "0": 1, "1": 1, "2": 1, "3": 1, "4": 1, "5": 1, "6": 1, "7": 1, "8": 1, "9": 1}
+        self.huffman = Huffman(self.freq)
+        with open("messages/agent3/dicts/airportcodes.txt", "r") as f:
+            self.codes = f.read().splitlines()
+        self.code2idx = {code: i for i, code in enumerate(self.codes)}
+        self.idx2code = {i: code for i, code in enumerate(self.codes)}
 
     def compress(self, msg: str) -> tuple[str, Bits]:
-        bits = self.huffman.encode(msg, padding_len=0)
-        debug(f'GenericTransformer: "{msg}" -> {bits.bin}')
+        code, res, date = msg.split(" ")
+        bits = self.huffman.encode(res, padding_len=0)
+
+        codeIdx = self.code2idx[code]
+        codeIdx_bits = "{0:b}".format(codeIdx).zfill(math.ceil(math.log2(len(self.code2idx))))
+
+        month = int(date[:2])
+        day = int(date[2:4])
+        year = int(date[4:]) - 2023
+        date_bits = "{0:b}".format(month).zfill(4) + "{0:b}".format(day).zfill(5) + "{0:b}".format(year).zfill(2)
+        bits = Bits(bin=codeIdx_bits + bits.bin + date_bits)
+
+        debug(f'FlightsTransformer: "{msg}" -> {bits.bin}')
 
         return msg, bits
 
     def uncompress(self, bits: Bits) -> str:
-        msg = self.huffman.decode(bits, padding_len=0)
-        debug(f'GenericTransformer: "{bits.bin}" -> {msg}')
+        codeIdxLen = math.ceil(math.log2(len(self.code2idx)))
+
+        codeIdx = int(bits.bin[0:codeIdxLen], 2)
+        code = self.idx2code[codeIdx]
+
+        for i in range(20, 25):
+            res = self.huffman.decode(Bits(bin=bits.bin[codeIdxLen:codeIdxLen+i]), padding_len=0)
+            if len(res) == 4:
+                break
+
+        date = bits.bin[codeIdxLen+i:]
+        month = ""
+        day = ""
+        year = ""
+        if len(date) >= 4:
+            month = f"{int(date[0:4], 2):02}"
+        if len(date) >= 9:
+            day = f"{int(date[4:9], 2):02}"
+        if len(date) >= 11:
+            year = int(date[9:11], 2) + 2023
+        if year == "":
+            msg = "PARTIAL: "
+        else:
+            msg = ""
+
+        msg += f"{code}" if code != "" else ""
+        msg += f" {res}" if res != "" else ""
+        msg += f" {month}" if month != "" else ""
+        msg += f"{day}" if day != "" else ""
+        msg += f"{year}" if year != "" else ""
+
+        debug(f'FlightsTransformer: "{bits.bin}" -> {msg}')
 
         return msg
 
@@ -545,7 +623,6 @@ class FlightsTransformer(MessageTransformer): #TODO: later bc format not finaliz
     def __str__(cls) -> str:
         return "FlightsTransformer"
 
-# TODO: adding freq prevents cases of things not in it
 class WarWordsTransformer(MessageTransformer):
     def __init__(self):
         self.freq = {' ': 15000, 'e': 2490, 's': 1960, 'a': 1852, 'r': 1672, 'i': 1648, 't': 1488, 'n': 1482, 'o': 1307, 'd': 1168, 'l': 1147, 'c': 1106, 'p': 835, 'm': 727, 'g': 668, 'u': 645, 'h': 542, 'b': 483, 'f': 468, 'v': 367, 'w': 348, 'k': 322, 'y': 312, '0': 140, '1': 96, '2': 77, 'j': 68, 'z': 58, '5': 55, 'x': 52, '3': 50, '4': 45, '7': 34, '9': 34, 'q': 30, '8': 29, '6': 25}
@@ -599,7 +676,7 @@ class SixWordsTransformer(MessageTransformer):
 
 class AlphaNumericTransformer(MessageTransformer):
     def __init__(self):
-        self.freq = {"a": 1, "b": 1, "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1, "k": 1, "l": 1, "m": 1, "n": 1, "o": 1, "p": 1, "q": 1, "r": 1, "s": 1, "t": 1, "u": 1, "v": 1, "w": 1, "x": 1, "y": 1, "z": 1, "0": 1, "1": 1, "2": 1, "3": 1, "4": 1, "5": 1, "6": 1, "7": 1, "8": 1, "9": 1, ".": 1, ",": 1, " ": 1}
+        self.freq = {"a": 1, "b": 1, "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1, "k": 1, "l": 1, "m": 1, "n": 1, "o": 1, "p": 1, "q": 1, "r": 1, "s": 1, "t": 1, "u": 1, "v": 1, "w": 1, "x": 1, "y": 1, "z": 1, "0": 1, "1": 1, "2": 1, "3": 1, "4": 1, "5": 1, "6": 1, "7": 1, "8": 1, "9": 1, ".": 1, " ": 1}
         self.huffman = Huffman(self.freq)
 
     def compress(self, msg: str) -> tuple[str, Bits]:
@@ -1334,7 +1411,7 @@ class Agent:
             # TODO: domain specific agent_assert's
             orig_msg = self.domain2transformer[domain].uncompress(message_bits)
             if partial_match:
-                orig_msg = "PARTIAL: " + orig_msg
+                orig_msg = "PARTIAL: " + orig_msg if "PARTIAL: " not in orig_msg else orig_msg
             info(f"using transformer: {self.domain2transformer[domain]},",
                 f"uncompressed message: \"{orig_msg}\"")
         except NullDeckException as e:
