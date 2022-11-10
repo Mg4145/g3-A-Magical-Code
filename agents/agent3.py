@@ -1325,6 +1325,7 @@ class Agent:
         self.trash_cards = list(range(32, 51))
 
         self.domainsToTruncate = [Domain.PLACES_AND_NAMES, Domain.PLACES_AND_NAMES_IDX, Domain.SIX_WORDS, Domain.SIX_WORDS_IDX]
+        self.passwordDomains = [Domain.PASSWORD]
         self.domain2transformer = {
                     Domain.GENERIC: WordTransformer(),
                     Domain.PASSWORD: PasswordsTransformer(),
@@ -1526,6 +1527,10 @@ class Agent:
                 orig_msg = "PARTIAL: " + orig_msg if "PARTIAL: " not in orig_msg else orig_msg
                 if domain in self.domainsToTruncate:
                     orig_msg = ' '.join(orig_msg.split(" ")[:-1])
+                elif domain in self.passwordDomains:
+                    # find the last word/number and remove
+                    pass
+                
             info(f"using transformer: {self.domain2transformer[domain]},",
                 f"uncompressed message: \"{orig_msg}\"")
         except NullDeckException as e:
