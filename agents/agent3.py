@@ -195,7 +195,6 @@ class SixWordRule: #not tested much
 
 class AirplaneFlightRule:
     def verdict(self, msg: str) -> bool:
-        # idx, store normal, 4bits, 5bits, 2bits
         pattern = re.compile("^([A-Z]{3} )([A-Z0-9]{4} )([0][0-9]|10|11|12)([0-3][0-9])(202[3-5])$")
         return pattern.match(msg)
 
@@ -537,21 +536,49 @@ class CoordsTransformer(MessageTransformer):
     def __str__(cls):
         return "CoordsTransformer"
 
-class AddressTransformer(MessageTransformer): #TODO: later bc format not finalized
+class AddressTransformer(MessageTransformer):
     def __init__(self):
-        self.huffman = Huffman()
+        self.freq = {"0": 1, "1": 1, "2": 1, "3": 1, "4": 1, "5": 1, "6": 1, "7": 1, "8": 1, "9": 1}
+        self.huffman = Huffman(self.freq)
+        self.name_transformer = DictIdxTransformer(wordlist_path="./messages/agent3/dicts/street_name.txt", delimiter='///')
+        self.suffix_transformer = DictIdxTransformer(wordlist_path="./messages/agent3/dicts/street_suffix.txt", delimiter='///')
+        self.names = open("./messages/agent3/dicts/street_name.txt").read().splitlines()
+        self.names = [name.strip() for name in self.names]
 
     def compress(self, msg: str) -> tuple[str, Bits]:
-        bits = self.huffman.encode(msg, padding_len=0)
+        parts = msg.split(" ")
+        parts = [part.strip() for part in parts if part != ""]
+
+        number = parts[0]
+        name = ' '.join(parts[1:-1])
+        suffix = parts[-1]
+        number_bits = self.huffman.encode(number)
+        name_bits = self.name_transformer.compress(name)
+        suffix_bits = self.suffix_transformer.compress(suffix)
+
+        if number_bits is None or name_bits is None or suffix_bits is None:
+            raise NullDeckException("found value not in dict")
+        bits = number_bits.bin + name_bits[1].bin + suffix_bits[1].bin
+        bits = Bits(bin=bits)
+
         debug(f'AddressTransformer: "{msg}" -> {bits.bin}')
 
         return msg, bits
 
     def uncompress(self, bits: Bits) -> str:
-        msg = self.huffman.decode(bits, padding_len=0)
+        bitstr = bits.bin
+        name_size = self.name_transformer.word_bit_size
+        suffix_size = self.suffix_transformer.word_bit_size
+        suffix = self.suffix_transformer.uncompress(Bits(bin=bitstr[-suffix_size:]))
+        name = self.name_transformer.uncompress(Bits(bin=bitstr[-suffix_size-name_size:-suffix_size]))
+        number = self.huffman.decode(Bits(bin=bitstr[:-suffix_size-name_size]))
+
+        msg = f"{number} {name} {suffix} " #TODO: they have a space here, its them not me
+
         debug(f'AddressTransformer: "{bits.bin}" -> {msg}')
 
         return msg
+
 
     @classmethod
     def __str__(cls) -> str:
@@ -681,13 +708,13 @@ class AlphaNumericTransformer(MessageTransformer):
 
     def compress(self, msg: str) -> tuple[str, Bits]:
         bits = self.huffman.encode(msg, padding_len=0)
-        debug(f'GenericTransformer: "{msg}" -> {bits.bin}')
+        debug(f'AlphaNumericTransformer: "{msg}" -> {bits.bin}')
 
         return msg, bits
 
     def uncompress(self, bits: Bits) -> str:
         msg = self.huffman.decode(bits, padding_len=0)
-        debug(f'GenericTransformer: "{bits.bin}" -> {msg}')
+        debug(f'AlphaNumericTransformer: "{bits.bin}" -> {msg}')
 
         return msg
 
