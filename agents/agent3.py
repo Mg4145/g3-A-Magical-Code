@@ -473,7 +473,7 @@ class WordTransformer(MessageTransformer):
 
 class PasswordsTransformer(MessageTransformer):
     def __init__(self):
-        self.freq = {'1': 10000, '2': 10000, '3': 10000, '4': 10000, '5': 10000, '6': 10000, '7': 10000, '8': 10000, '9': 10000, '0': 10000, 'e': 12351, 'a': 10065, 's': 9847, 'r': 8604, 'i': 8586, 't': 7560, 'n': 7484, 'o': 7095, 'c': 5985, 'l': 5970, 'd': 5057, 'p': 4221, 'm': 4148, 'u': 3405, 'g': 3281, 'h': 3040, 'b': 2787, 'f': 2164, 'y': 1891, 'v': 1602, 'w': 1579, 'k': 1390, 'x': 532, 'j': 486, 'z': 371, 'q': 284} #TODO: change numerical freqs to be more realistic
+        self.freq = {'1': 10000, '2': 10000, '3': 10000, '4': 10000, '5': 10000, '6': 10000, '7': 10000, '8': 10000, '9': 10000, '0': 10000, 'e': 12351, 'a': 10065, 's': 9847, 'r': 8604, 'i': 8586, 't': 7560, 'n': 7484, 'o': 7095, 'c': 5985, 'l': 5970, 'd': 5057, 'p': 4221, 'm': 4148, 'u': 3405, 'g': 3281, 'h': 3040, 'b': 2787, 'f': 2164, 'y': 1891, 'v': 1602, 'w': 1579, 'k': 1390, 'x': 532, 'j': 486, 'z': 371, 'q': 284, ' ': 2000}
         self.huffman = Huffman(self.freq)
         with open("messages/agent3/dicts/shortened_dicts/passwords_mini.txt", 'r') as f:
             self.abrev2word = {}
@@ -495,7 +495,6 @@ class PasswordsTransformer(MessageTransformer):
         ])
 
         bits = self.huffman.encode(combinedMsg, padding_len=0)
-
         if self.uncompress(bits) != "@" + msg:
             combinedMsg = ' '.join([
                 self.word2abrev[word] if word.isalpha() and word in self.word2abrev else word
@@ -509,9 +508,7 @@ class PasswordsTransformer(MessageTransformer):
 
     def uncompress(self, bits: Bits, partial_match=False) -> str:
         msg = self.huffman.decode(bits, padding_len=0)
-        if " " in msg:
-            msg = ''.join(msg.split(" "))
-        splitMsg = self.wordSearcher._get_all_words(msg, self.abrev2word.keys())
+        splitMsg = self.wordSearcher._get_all_words(msg, self.abrev2word.keys()) if " " not in msg else msg.split(" ")
 
         splitMsg = splitMsg[:-1] if partial_match else splitMsg
 
@@ -671,7 +668,7 @@ class AddressTransformer(MessageTransformer):
     @classmethod
     def __str__(cls) -> str:
         return "AddressTransformer"
-       
+ 
 class FlightsTransformer(MessageTransformer):
     def __init__(self):
         self.freq = {"A": 1, "B": 1, "C": 1, "D": 1, "E": 1, "F": 1, "G": 1, "H": 1, "I": 1, "J": 1, "K": 1, "L": 1, "M": 1, "N": 1, "O": 1, "P": 1, "Q": 1, "R": 1, "S": 1, "T": 1, "U": 1, "V": 1, "W": 1, "X": 1, "Y": 1, "Z": 1, "0": 1, "1": 1, "2": 1, "3": 1, "4": 1, "5": 1, "6": 1, "7": 1, "8": 1, "9": 1}
@@ -745,7 +742,7 @@ class WarWordsTransformer(MessageTransformer):
         self.word_file = "./messages/agent3/dicts/shortened_dicts/war_words_mini.txt"
         self.transformer = WordTransformer(wordlist=self.word_file, huffman_encoding=self.huffman)
 
-    def compress(self, msg: str) -> tuple[str, Bits]: #TODO: maybe clean messages?
+    def compress(self, msg: str) -> tuple[str, Bits]:
         return self.transformer.compress(msg)
 
     def uncompress(self, bits: Bits, partial_match=False) -> str:
