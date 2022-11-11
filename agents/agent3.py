@@ -890,9 +890,11 @@ class PermutationConverter:
     cards to a unique integer in its binary representation."""
 
     def __init__(self, cards):
-        # super().__init__(cards)
         self.cards = cards
         self.permuter = PermutationGenerator()
+
+    def _info(self, *args):
+        info(f"[ {self.__str__()} ]", *args)
 
     def to_deck(self, domain: Domain, partial_match: bool, bits: Bits) -> Optional[tuple[Deck, Deck]]:
         # Bit Format:
@@ -901,39 +903,32 @@ class PermutationConverter:
         #       + ------------ + ------------- + ------ + ----------- + -------- +
         # bits:        n               1            4           8            8
 
-        domain_bits = "{0:b}".format(domain2int[domain]).zfill(4)
         partial_match = str(int(partial_match))
-
-        if len(bits.bin) > 226:
-            # magic number 226: log_2(52!)
-            return None
-
+        domain_bits = "{0:b}".format(domain2int[domain]).zfill(4)
         bit_len = Bits(uint=len(bits.bin), length=8)
-
-        bit_prefix = f"{bits.bin}{partial_match}{domain_bits}{bit_len.bin}"
-        checksum = pearson_checksum(Bits(bin=bit_prefix))
+        checksum = pearson_checksum(
+            Bits(bin=f"{bits.bin}{partial_match}{domain_bits}{bit_len.bin}")
+        )
 
         final_bits = f"{bits.bin}{partial_match}{domain_bits}{bit_len.bin}{checksum.bin}"
+        self._info(f"partial match: {partial_match}, domain: {domain_bits},",
+                f"# msg bits: {bit_len.bin}, checksum: {checksum}")
+        self._info(f"bit pattern w/ metadata ({len(final_bits)}): {final_bits}")
 
+        # select enough cards for encoding the bit pattern with card permutation
         num_msg_cards = self.permuter.n_needed(2 ** len(final_bits))
         if num_msg_cards > len(self.cards):
             return None
-        
-        # info("checksum:", checksum.bin)
-        # info("bit length:", bit_len.bin)
-        # info("domain:", domain_bits)
-        # info("partial match:", partial_match)
-        # info("msg bits:", bits.bin)
+        else:
+            msg_cards = [str(card) for card in sorted(self.cards)[:num_msg_cards]]
 
-        msg_cards = [str(card) for card in sorted(self.cards)[:num_msg_cards]]
         msg = [
             int(card)
             for card in self.permuter.encode(msg_cards, int(final_bits, 2))
         ]
         msg_metadata = []
 
-        info(f"encoded deck ({len(msg)}):", msg)
-
+        self._info(f"encoded deck ({len(msg)}):", msg)
         return msg_metadata, msg
 
     def to_bits(self, msg: Deck, msg_metadata: Deck) -> Optional[tuple[Domain, bool, Bits]]:
@@ -941,12 +936,15 @@ class PermutationConverter:
                 f"PermutationConverter expects no message metadata card, " +
                 f"but got a message metadata deck of size {len(msg_metadata)}."))
 
-        info(f"received deck ({len(msg)}):", msg)
+        self._info(f"received deck ({len(msg)}):", msg)
 
-        for n in range(4, 32):
+        # explanation of magic numbers
+        #   4  <= we need at least 4 cards to encode 21 bits of metadata, # cards used for msg > 4 
+        #   33 <= we plan to use a maximum of 32 cards for encoding bits
+        for n in range(4, 33):
             card_pool = self.cards[:n]
             cards = [ str(card) for card in msg if card in card_pool ]
-            info(f"[ PermutationConverter ] trying {n} cards: {cards}")
+            self._info(f"trying {n} cards: {list(map(int, cards))}")
 
             rank = self.permuter.decode(cards)
             bits = Bits(uint=rank, length=256)
@@ -957,23 +955,14 @@ class PermutationConverter:
             msg_bit_len = bits.bin[-16:-8]
             domain = bits.bin[-20:-16]
             partial_match = bits.bin[-21]
-            message_bits = bits.bin[:-21]
+            message_bits = bits.bin[:-21][-int(msg_bit_len, 2):]
 
+            # an extra guard
             if int(domain, 2) not in int2domain:
                 continue
 
-            # info(checksum)
-            # info(msg_bit_len)
-            # info(domain)
-            # info(partial_match)
-            # info(message_bits)
-
-            message_bits = message_bits[-int(msg_bit_len, 2):]
-            # info(message_bits)
-
             valid = pearson_checksum(Bits(bin=message_bits + partial_match + domain + msg_bit_len)).bin == checksum
-            info("pearson checksum passed?", valid)
-
+            self._info("pearson checksum passed?", valid)
             if valid:
                 debug(f"recovered message deck: {msg} -> {partial_match} + {message_bits}")
                 return int2domain[int(domain, 2)], bool(int(partial_match, 2)), Bits(bin=message_bits)
@@ -1243,13 +1232,16 @@ class Agent:
         # TODO
         # bit legnths to partial match
         # Permutation Converter:
-        #   32 - 2 (metadata) - 6 (message metadata) = 24 cards to use for message
-        #   argmax(n) of n! - 2^24 => 79
-        #                     2^25 => 83
-        #                     2^26 => 88
-        #                     2^27 => 93
-        #                     2^28 => 97
-        self.partial_match_len = [117, 79]
+        # total bits = n (msg) + 21 (metadata)
+        # The maximum # bits we can represent with m cards is given by:
+        #   n_max = math.floor( log_2(m!) - 21 )
+        #
+        #   m = 52  => n = 204
+        #   m = 42  => n = 148
+        #   m = 33  => n = 101
+        #   m = 32  => n = 96
+        self.bit_len_hi = 96
+        self.partial_match_len = [96, 148]
  
     # TODO: there might be many _tangle_cards and _untangle_cards methods
     # such as using checksum vs using trashcards, so this should be extracted
@@ -1345,17 +1337,18 @@ class Agent:
         partial_match = False
         free_cards = self.free_cards
         partial_deck = None
-        # partial_deck = self._encode_bits_to_deck(bits, domain, partial_match, free_cards)
-        # if partial_deck is None:
-        #     info(f"[ {msg} ]", "trying partial match by truncating the bit patterns...")
-        # TODO: try PermutationConverter here
-        if len(bits.bin) <= 117:
-            # magic number 117: needs 32 cards to encode using PermutationConverter
+
+        if len(bits.bin) <= self.bit_len_hi:
             partial_deck = PermutationConverter(list(range(32))).to_deck(domain, partial_match, bits)
+
             if partial_deck is not None:
                 _, msg_deck = partial_deck
                 unused_cards = [card for card in POKER_DECK if card not in msg_deck]
                 return unused_cards + msg_deck
+
+
+        if partial_deck is None:
+            info(f"[ {msg} ]", "trying partial match by truncating the bit patterns...")
 
         # TODO: if PermutationConverter uses more than 32 cards, then try ChunkConverter, if
         # it's able to encode, use it, otherwise fall back to partial match: with permutation
