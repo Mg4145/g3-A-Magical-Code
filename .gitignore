@@ -8,3 +8,5 @@ messages/.DS_Store
 .idea
 tests/
 
+*.png
+/log/*
