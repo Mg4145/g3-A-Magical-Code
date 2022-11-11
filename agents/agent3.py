@@ -940,8 +940,8 @@ class PermutationConverter:
 
         # explanation of magic numbers
         #   4  <= we need at least 4 cards to encode 21 bits of metadata, # cards used for msg > 4 
-        #   33 <= we plan to use a maximum of 32 cards for encoding bits
-        for n in range(4, 33):
+        #   33 <= we plan to use a maximum of 32 (MAX_PERMUTATION_N) cards for encoding bits
+        for n in range(4, MAX_PERMUTATION_N + 1):
             card_pool = self.cards[:n]
             cards = [ str(card) for card in msg if card in card_pool ]
             self._info(f"trying {n} cards: {list(map(int, cards))}")
@@ -1339,7 +1339,7 @@ class Agent:
         partial_deck = None
 
         if len(bits.bin) <= self.bit_len_hi:
-            partial_deck = PermutationConverter(list(range(32))).to_deck(domain, partial_match, bits)
+            partial_deck = PermutationConverter(list(range(MAX_PERMUTATION_N))).to_deck(domain, partial_match, bits)
 
             if partial_deck is not None:
                 _, msg_deck = partial_deck
@@ -1366,7 +1366,7 @@ class Agent:
             bit_len = self.partial_match_len[i]
             bits = Bits(bin=bits.bin[:bit_len])
 
-            partial_deck = PermutationConverter(list(range(32))).to_deck(domain, partial_match, bits)
+            partial_deck = PermutationConverter(list(range(MAX_PERMUTATION_N))).to_deck(domain, partial_match, bits)
             if partial_deck is not None:
                 _, msg_deck = partial_deck
                 unused_cards = [card for card in POKER_DECK if card not in msg_deck]
@@ -1405,7 +1405,7 @@ class Agent:
         info(f"\ndecode, deck: {deck}")
 
         try:
-            bits = PermutationConverter(list(range(32))).to_bits(deck, [])
+            bits = PermutationConverter(list(range(MAX_PERMUTATION_N))).to_bits(deck, [])
             if bits is not None:
                 domain, partial_match, bits = bits
 
@@ -1497,7 +1497,7 @@ def test_metacodec():
         codec.decode(deck)
 
 def test_permutation_converter():
-    free_cards = list(range(32))
+    free_cards = list(range(MAX_PERMUTATION_N))
     permutation_converter = PermutationConverter(free_cards)
 
     deck = permutation_converter.to_deck(Bits(bin="010"))
