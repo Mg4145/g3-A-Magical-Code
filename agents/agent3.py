@@ -494,10 +494,21 @@ class PasswordsTransformer(MessageTransformer):
 
         bits = self.huffman.encode(combinedMsg, padding_len=0)
 
+        if self.uncompress(bits) != msg:
+            combinedMsg = ' '.join([
+                self.word2abrev[word] if word.isalpha() and word in self.word2abrev else word
+                for word in splitMsg
+            ])
+
+            bits = self.huffman.encode(combinedMsg, padding_len=0)
+
+        debug(f'PasswordsTransformer: "{msg}" -> {bits.bin}')
         return combinedMsg, bits
 
     def uncompress(self, bits: Bits, partial_match=False) -> str:
         msg = self.huffman.decode(bits, padding_len=0)
+        if " " in msg:
+            msg = ''.join(msg.split(" "))
         splitMsg = self.wordSearcher._get_all_words(msg, self.abrev2word.keys())
 
         splitMsg = splitMsg[:-1] if partial_match else splitMsg
@@ -565,35 +576,32 @@ class CoordsTransformer(MessageTransformer):
             # raise NullDeckException("NULL(Weird, look into, happens 4 times)")
 
         i = int(math.ceil((len(bitstr) - 14) / 4))
-        lat = ""
-        latMin = ""
-        latDir = ""
-        long = ""
-        longMin = ""
-        longDir = ""
 
-        lat = self._bitstr_to_intstr(bitstr[:i])
-        if len(bitstr) >= i + i + 6:
-            latMin = self._bitstr_to_intstr(bitstr[i:i+i+6], padding=4)
-        if len(bitstr) >= i+i+6:
-            latDir = "N" if bitstr[i+i+6] == "0" else "S"
-        if len(bitstr) >= i+i+7+i:
-            long = self._bitstr_to_intstr(bitstr[i+i+7:i+i+7+i])
-        if len(bitstr) >= i+i+7+i+i+6:
-            longMin = self._bitstr_to_intstr(bitstr[i+i+7+i:i+i+7+i+i+6], padding=4)
-        if len(bitstr) >= i+i+7+i+i+6:
-            longDir = "E" if bitstr[i+i+7+i+i+6] == "0" else "W"
-        if longDir == "":
-            msg = "PARTIAL: "
-        else:
-            msg = ""
+        outputs = []
+        if len(bitstr) > i:
+            outputs.append(self._bitstr_to_intstr(bitstr[:i]))
+        if len(bitstr) > i + i + 6:
+            outputs.append(self._bitstr_to_intstr(bitstr[i:i+i+6], padding=4))
+        if len(bitstr) > i+i+6:
+            outputs.append("N" if bitstr[i+i+6] == "0" else "S")
+        if len(bitstr) > i+i+7+i:
+            outputs.append(self._bitstr_to_intstr(bitstr[i+i+7:i+i+7+i]))
+        if len(bitstr) > i+i+7+i+i+6:
+            outputs.append(self._bitstr_to_intstr(bitstr[i+i+7+i:i+i+7+i+i+6], padding=4))
+        if len(bitstr) > i+i+7+i+i+6:
+            outputs.append("E" if bitstr[i+i+7+i+i+6] == "0" else "W")
+        
+        if partial_match:
+            outputs = outputs[:-1]
 
-        msg += f"{lat}"
-        msg += f".{latMin}" if latMin != "" else ""
-        msg += f" {latDir}" if latDir != "" else ""
-        msg += f", {long}" if long != "" else ""
-        msg += f".{longMin}" if longMin != "" else ""
-        msg += f" {longDir}" if longDir != "" else ""
+        msg = "" if len(outputs) == 6 else "PARTIAL: "
+
+        msg += f"{outputs[0]}" if len(outputs) > 0 else ""
+        msg += f".{outputs[1]}" if len(outputs) > 1 else ""
+        msg += f" {outputs[2]}" if len(outputs) > 2 else ""
+        msg += f", {outputs[3]}" if len(outputs) > 3 else ""
+        msg += f".{outputs[4]}" if len(outputs) > 4 else ""
+        msg += f" {outputs[5]}" if len(outputs) > 5 else ""
 
         debug(f'CoordsTransformer: "{bits.bin}" -> {msg}')
 
