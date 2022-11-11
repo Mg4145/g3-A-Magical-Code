@@ -266,6 +266,8 @@ class DomainDetector:
                     encoded_sizes.append(len(encoded_msg))
                     domains.append(domain)
 
+        debug(f"domains: {domains}, {encoded_sizes}")
+
         return Domain.GENERIC if len(domains) == 0 or min(encoded_sizes) == sys.maxsize else domains[encoded_sizes.index(min(encoded_sizes))]
 
 
@@ -494,7 +496,7 @@ class PasswordsTransformer(MessageTransformer):
 
         bits = self.huffman.encode(combinedMsg, padding_len=0)
 
-        if self.uncompress(bits) != msg:
+        if self.uncompress(bits) != "@" + msg:
             combinedMsg = ' '.join([
                 self.word2abrev[word] if word.isalpha() and word in self.word2abrev else word
                 for word in splitMsg
@@ -780,7 +782,7 @@ class PlacesAndNamesTransformer(MessageTransformer):
 
     def uncompress(self, bits: Bits, partial_match=False) -> str:
         decoded_msg = self.transformer.uncompress(bits, partial_match)
-        capitalized_msg = [word.capitalize() for word in decoded_msg.split()]
+        capitalized_msg = [word.capitalize() for word in decoded_msg.split(" ")]
 
         return " ".join(capitalized_msg)
 
